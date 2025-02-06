@@ -1,0 +1,116 @@
+import os
+import re
+from transformers import pipeline, AutoTokenizer, AutoModelForQuestionAnswering
+
+def load_book(file_path: str) -> str:
+    """
+    Load the complete text from the specified file.
+    
+    Args:
+        file_path (str): Path to the book text file.
+    
+    Returns:
+        str: The full text of the book.
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        return text
+    except Exception as e:
+        raise Exception(f"Error loading book from {file_path}: {e}")
+
+def preprocess_text(text: str) -> str:
+    """
+    Preprocess the input text by cleaning whitespace and unwanted characters.
+    
+    Args:
+        text (str): Raw text input.
+    
+    Returns:
+        str: Cleaned and preprocessed text.
+    """
+    # Removing extra spaces, newlines, and tabs
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def chunk_text(text: str, max_words: int = 400) -> list:
+    """
+    Split the text into chunks with a maximum number of words per chunk.
+    
+    Args:
+        text (str): Preprocessed text.
+        max_words (int): Maximum number of words per chunk.
+    
+    Returns:
+        list: A list of text chunks.
+    """
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_words):
+        chunk = " ".join(words[i:i+max_words])
+        chunks.append(chunk)
+    return chunks
+
+def answer_question(question: str, chunks: list, qa_pipeline) -> tuple:
+    """
+    Iterate over each text chunk, use the QA model to compute an answer,
+    and select the answer with the highest confidence score.
+    
+    Args:
+        question (str): The question to answer.
+        chunks (list): List of context chunks.
+        qa_pipeline: Hugging Face QA pipeline.
+    
+    Returns:
+        tuple: (best_answer (str), best_score (float))
+    """
+    best_answer = ""
+    best_score = 0.0
+
+    for chunk in chunks:
+        try:
+            # Getting the answer and score for the current chunk
+            result = qa_pipeline(question=question, context=chunk)
+            if result['score'] > best_score:
+                best_score = result['score']
+                best_answer = result['answer']
+        except Exception as e:
+            
+            continue
+
+    return best_answer, best_score
+
+def main():
+    
+    book_path = "book.txt"
+    
+    #  preprocessing the book text
+    print("Loading the book...")
+    text = load_book(book_path)
+    text = preprocess_text(text)
+    
+    # Chunk the text to meet the model's input length limitations
+    print("Chunking the text...")
+    chunks = chunk_text(text, max_words=400)
+    print(f"Text has been divided into {len(chunks)} chunks.")
+
+    # Initialize the QA pipeline using a small pre-trained model
+    print("Loading the QA model...")
+    qa_model_name = "distilbert-base-cased-distilled-squad"
+    qa_pipeline_instance = pipeline("question-answering", model=qa_model_name, tokenizer=qa_model_name)
+
+    
+    question = input("Enter your question: ").strip()
+    if not question:
+        print("No question provided. Exiting.")
+        return
+
+    # Retrieve the best answer from the text chunks
+    print("Processing question...")
+    answer, score = answer_question(question, chunks, qa_pipeline_instance)
+    print("\n--- Answer ---")
+    print(f"Answer: {answer}")
+    print(f"Confidence Score: {score:.4f}")
+
+if __name__ == "__main__":
+    main()
